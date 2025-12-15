@@ -1,0 +1,13 @@
+# Node modules
+node_modules/
+
+# Build / dist folders
+dist/
+build/
+
+# Expo (caso tenha sido usado)
+.expo/
+
+# Arquivos de ambiente (não devem ser versionados)
+.env
+.env.local
