@@ -1,98 +1,309 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+} from "react-native";
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+interface Transaction {
+  _id?: string;
+  description: string;
+  amount: number;
+  type: "entrada" | "saída";
+  date: string | Date;
+}
+
+const BASE_URL = "http://192.168.1.8:3000";
+const TRANSACTIONS_URL = `${BASE_URL}/transactions`;
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [balance, setBalance] = useState(0);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [type, setType] = useState<"entrada" | "saída">("entrada");
+
+  // ======================
+  //  BUSCAR TRANSAÇÕES
+  // ======================
+  async function loadTransactions() {
+    try {
+      console.log("GET →", TRANSACTIONS_URL);
+
+      const response = await fetch(TRANSACTIONS_URL);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data: Transaction[] = await response.json();
+      setTransactions(data);
+
+      const total = data.reduce((acc, item) => {
+        return item.type === "entrada"
+          ? acc + item.amount
+          : acc - item.amount;
+      }, 0);
+
+      setBalance(total);
+    } catch (err) {
+      console.log("❌ Erro ao carregar transações:", err);
+    }
+  }
+
+  useEffect(() => {
+    // evita race condition do Expo
+    const timer = setTimeout(() => {
+      loadTransactions();
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // ======================
+  //  ADICIONAR TRANSAÇÃO
+  // ======================
+  async function addTransaction() {
+    if (!description || !amount) {
+      Alert.alert("Erro", "Preencha todos os campos.");
+      return;
+    }
+
+    const newTransaction = {
+      description,
+      amount: Number(amount),
+      type,
+      date: new Date(),
+    };
+
+    try {
+      console.log("POST →", TRANSACTIONS_URL, newTransaction);
+
+      const response = await fetch(TRANSACTIONS_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newTransaction),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const saved: Transaction = await response.json();
+
+      setTransactions((prev) => [saved, ...prev]);
+      setBalance((prev) =>
+        type === "entrada" ? prev + saved.amount : prev - saved.amount
+      );
+
+      setDescription("");
+      setAmount("");
+      setType("entrada");
+    } catch (err) {
+      console.log("❌ Erro ao salvar transação:", err);
+    }
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* SALDO */}
+      <View style={styles.balanceContainer}>
+        <Text style={styles.balanceLabel}>Saldo atual</Text>
+        <Text style={styles.balanceValue}>
+          R$ {balance.toFixed(2)}
+        </Text>
+      </View>
+
+      {/* LISTA */}
+      <FlatList
+        data={transactions}
+        keyExtractor={(item) => item._id!}
+        contentContainerStyle={{ paddingBottom: 20 }}
+        renderItem={({ item }) => (
+          <View style={styles.transactionItem}>
+            <View>
+              <Text style={styles.description}>{item.description}</Text>
+              <Text style={styles.date}>
+                {new Date(item.date).toLocaleDateString()}
+              </Text>
+            </View>
+
+            <Text
+              style={[
+                styles.amount,
+                item.type === "entrada"
+                  ? styles.income
+                  : styles.expense,
+              ]}
+            >
+              {item.type === "entrada" ? "+" : "-"} R$ {item.amount}
+            </Text>
+          </View>
+        )}
+      />
+
+      {/* FORMULÁRIO */}
+      <View style={styles.form}>
+        <Text style={styles.formTitle}>Nova transação</Text>
+
+        <TextInput
+          placeholder="Descrição"
+          style={styles.input}
+          value={description}
+          onChangeText={setDescription}
+        />
+
+        <TextInput
+          placeholder="Valor"
+          style={styles.input}
+          value={amount}
+          keyboardType="numeric"
+          onChangeText={setAmount}
+        />
+
+        <View style={styles.typeRow}>
+          <TouchableOpacity
+            style={[
+              styles.typeButton,
+              type === "entrada" && styles.typeSelected,
+            ]}
+            onPress={() => setType("entrada")}
+          >
+            <Text>Entrada</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.typeButton,
+              type === "saída" && styles.typeSelected,
+            ]}
+            onPress={() => setType("saída")}
+          >
+            <Text>Saída</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={styles.submitButton}
+          onPress={addTransaction}
+        >
+          <Text style={styles.submitText}>Adicionar</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
+// ======================
+//  STYLES
+// ======================
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+    padding: 20,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+
+  balanceContainer: {
+    marginBottom: 25,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+
+  balanceLabel: {
+    fontSize: 16,
+    color: "#555",
+  },
+
+  balanceValue: {
+    fontSize: 32,
+    fontWeight: "bold",
+  },
+
+  transactionItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+
+  description: {
+    fontSize: 16,
+  },
+
+  date: {
+    fontSize: 12,
+    color: "#888",
+  },
+
+  amount: {
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+
+  income: {
+    color: "green",
+  },
+
+  expense: {
+    color: "red",
+  },
+
+  form: {
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: "#ddd",
+  },
+
+  formTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 15,
+  },
+
+  input: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+
+  typeRow: {
+    flexDirection: "row",
+    marginBottom: 10,
+  },
+
+  typeButton: {
+    flex: 1,
+    padding: 10,
+    marginHorizontal: 5,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+  },
+
+  typeSelected: {
+    backgroundColor: "#e5e5e5",
+  },
+
+  submitButton: {
+    backgroundColor: "#0085FF",
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+
+  submitText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });
