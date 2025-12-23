@@ -1,5 +1,2 @@
-crie um terminal
-cd backend -> node server.js
-
-abra outro terminal
-cd frontend -> npm i -> npm expo start
+Aplicação fullstack para controle financeiro pessoal, permitindo cadastro
+de entradas e saídas com visualização organizada dos dados.
